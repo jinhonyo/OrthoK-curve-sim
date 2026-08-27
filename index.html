@@ -3,19 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Ortho-K 鏡片幾何工程分析儀</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <title>Ortho-k驗配輔助器 V2.1</title>
   <style>
     :root {
       --bg-color: #0b0f19;
       --card-bg: #131c2e;
       --card-bg-inner: #080d16;
-      --accent: #38bdf8;
-      --accent-hover: #0284c7;
+      --accent: #f97316; 
+      --warning: #ef4444;
       --text-main: #f8fafc;
       --text-sub: #94a3b8;
       --border: #1e293b;
-      --cornea-color: #ffffff; 
+      --cornea: #ffffff;
+      --lens: #f97316;
+      
+      --metal-light: #bae6fd;
+      --metal-base: #38bdf8;
+      --metal-dark: #0284c7;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
     
@@ -25,28 +29,27 @@
       color: var(--text-main);
       height: 100vh;
       height: 100dvh; 
-      overflow: hidden; 
       display: flex;
       justify-content: center;
+      overflow: hidden;
     }
     .app-container {
       width: 100%;
-      max-width: 520px;
+      max-width: 700px;
       height: 100%;
       display: flex;
       flex-direction: column;
     }
     .fixed-top-section {
       flex-shrink: 0;
-      padding: 10px 10px 0 10px;
+      padding: 10px;
       display: flex;
       flex-direction: column;
       gap: 10px;
       background-color: var(--bg-color);
       z-index: 10;
       border-bottom: 1px solid var(--border);
-      padding-bottom: 10px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     }
     header {
       background: var(--card-bg);
@@ -54,39 +57,72 @@
       border-radius: 12px;
       padding: 10px 14px;
       text-align: center;
+      position: relative;
     }
-    h1 { font-size: 1.05rem; color: var(--accent); font-weight: 700; letter-spacing: 0.5px; }
+    h1 { font-size: 1.15rem; color: var(--accent); font-weight: 700; letter-spacing: 0.5px; }
     
+    .warning-banner {
+      display: none;
+      background-color: rgba(239, 68, 68, 0.15);
+      color: #fca5a5;
+      border: 1px solid var(--warning);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      text-align: center;
+      margin-top: 6px;
+    }
+
+    .dashboard {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+    }
+    .dash-card {
+      flex: 1 1 calc(33% - 10px);
+      min-width: 90px;
+      background: var(--card-bg-inner);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 4px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .dash-title { font-size: 0.65rem; color: var(--text-sub); margin-bottom: 4px; white-space: nowrap; }
+    .dash-value { font-size: 0.95rem; font-weight: 700; color: var(--text-main); font-family: ui-monospace, monospace; }
+    .dash-value.highlight { color: var(--accent); }
+
     .chart-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
-    /* 稍微加大畫布高度，讓視覺置中的上下空間更充裕 */
-    .chart-wrapper { position: relative; width: 100%; height: 260px; }
     
-    /* 新增：圖表顯示控制項樣式 */
+    .canvas-wrapper {
+      width: 100%;
+      height: 180px;
+      position: relative;
+    }
+    canvas { width: 100%; height: 100%; display: block; }
+    
     .visibility-controls {
       display: flex;
       justify-content: center;
       gap: 20px;
       margin-top: 8px;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
     }
     .toggle-label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      user-select: none;
+      display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
     }
-    .toggle-label input[type="checkbox"] {
-      cursor: pointer;
-      width: 16px;
-      height: 16px;
-      accent-color: var(--accent);
-    }
+    .toggle-label input[type="checkbox"] { accent-color: var(--metal-base); }
 
     .scrollable-bottom-section {
       flex-grow: 1;
@@ -95,7 +131,6 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
-      -webkit-overflow-scrolling: touch; 
     }
     
     .panel {
@@ -105,380 +140,570 @@
       padding: 14px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
+    .panel.auto-fit-panel { border-color: var(--metal-dark); }
     .panel-title {
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: var(--accent);
+      font-size: 0.9rem; font-weight: 700; color: var(--accent);
       border-bottom: 1px solid var(--border);
-      padding-bottom: 6px;
-      margin-bottom: 4px;
+      padding-bottom: 6px; margin-bottom: 2px;
     }
-    .control-group { display: flex; flex-direction: column; gap: 6px; }
-    .label-row { display: flex; justify-content: space-between; font-size: 0.82rem; }
-    .val-highlight {
-      font-weight: 700;
-      color: var(--text-main);
-      font-family: ui-monospace, SFMono-Regular, monospace;
+    .control-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+    .label-row { display: flex; justify-content: space-between; font-size: 0.8rem; align-items: center; }
+    .val-highlight { font-weight: 700; color: var(--text-main); font-family: ui-monospace, monospace; }
+    
+    input[type=range] { 
+      -webkit-appearance: none; width: 100%; background: transparent; outline: none; padding: 8px 0;
     }
-    input[type=range] {
-      width: 100%; height: 24px; background: transparent; outline: none; accent-color: var(--accent); cursor: pointer;
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%; height: 6px; cursor: pointer; background: #1e293b;
+      border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.6); border: 1px solid #0f172a;
     }
-    input[type=number] {
-      background: var(--card-bg-inner);
-      border: 1px solid var(--border);
-      color: var(--text-main);
-      padding: 4px 8px;
-      border-radius: 6px;
-      width: 70px;
-      text-align: center;
-      font-family: ui-monospace, SFMono-Regular, monospace;
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; height: 20px; width: 20px; border-radius: 50%;
+      background: linear-gradient(to bottom, var(--metal-light) 0%, var(--metal-base) 100%);
+      border: 1px solid var(--metal-dark);
+      box-shadow: inset 0 2px 2px rgba(255, 255, 255, 0.8), inset 0 -1px 2px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.5);
+      cursor: pointer; margin-top: -8px; transition: transform 0.1s;
+    }
+    input[type=range]::-webkit-slider-thumb:active {
+      transform: scale(1.1); background: linear-gradient(to bottom, #e0f2fe 0%, #7dd3fc 100%);
+    }
+
+    .btn-auto {
+      background: linear-gradient(to bottom, var(--metal-light) 0%, var(--metal-base) 100%);
+      color: #082f49; border: 1px solid var(--metal-dark); border-radius: 8px; padding: 12px;
+      font-weight: 800; font-size: 0.95rem; text-shadow: 0 1px 1px rgba(255, 255, 255, 0.4);
+      cursor: pointer; box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), 0 4px 6px rgba(0, 0, 0, 0.3);
+      transition: all 0.2s ease; margin-top: 4px;
+    }
+    .btn-auto:active {
+      transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.2);
     }
     
-    .btn-auto {
-      background: var(--accent);
-      color: #000;
-      border: none;
-      border-radius: 8px;
-      padding: 10px;
-      font-weight: 700;
-      font-size: 0.9rem;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .btn-auto:hover { background: var(--accent-hover); color: #fff; }
+    .zone-info { font-size: 0.75rem; color: var(--text-sub); text-align: right; }
+    .aspheric-label { color: #818cf8; font-size: 0.75rem; }
   </style>
 </head>
 <body>
+
 <div class="app-container">
   
   <div class="fixed-top-section">
     <header>
-      <h1>Ortho-K 鏡片幾何工程分析儀</h1>
+      <h1>Ortho-k驗配輔助器 V2.1</h1>
+      <div id="warning-msg" class="warning-banner">⚠️ 警告：目標降度可能超出鏡片幾何極限，請留意合理性。</div>
     </header>
-    <div class="chart-card">
-      <div class="chart-wrapper">
-        <canvas id="simChart"></canvas>
+    
+    <div class="dashboard">
+      <div class="dash-card">
+        <div class="dash-title">頂點間隙</div>
+        <div class="dash-value" id="metric-apical">-- µm</div>
       </div>
-      <!-- 新增：角膜與鏡片顯示控制區塊 -->
+      <div class="dash-card">
+        <div class="dash-title">淚液儲存區</div>
+        <div class="dash-value" id="metric-reservoir">-- µm</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-title">定位區均隙</div>
+        <div class="dash-value" id="metric-ac-clearance">-- µm</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-title">邊緣間隙</div>
+        <div class="dash-value" id="metric-edge-clearance">-- µm</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-title">鏡片總矢深</div>
+        <div class="dash-value highlight" id="metric-lens-sag">-- mm</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <canvas id="simCanvas"></canvas>
+      </div>
       <div class="visibility-controls">
-        <label class="toggle-label">
-          <input type="checkbox" id="showCornea" checked> 
-          <span style="color: var(--cornea-color);">角膜 (Cornea)</span>
-        </label>
-        <label class="toggle-label">
-          <input type="checkbox" id="showLens" checked> 
-          <span style="color: var(--accent);">鏡片 (Lens)</span>
-        </label>
+        <label class="toggle-label"><input type="checkbox" id="showCornea" checked> <span style="color: var(--cornea);">角膜</span></label>
+        <label class="toggle-label"><input type="checkbox" id="showLens" checked> <span style="color: var(--lens);">鏡片</span></label>
+        <label class="toggle-label"><input type="checkbox" id="showTearFilm" checked> <span style="color: #84cc16;">螢光層</span></label>
       </div>
     </div>
   </div>
+
   <div class="scrollable-bottom-section">
     
-    <div class="panel">
-      <div class="panel-title">1. 基底角膜參數 (Cornea)</div>
+    <!-- 自動驗配區塊 -->
+    <div class="panel auto-fit-panel">
+      <div class="panel-title">1. 角膜數據與驗配目標 (動態連動)</div>
+      
       <div class="control-group">
-        <div class="label-row">
-          <span>中央曲率 (R₀):</span>
-          <span id="r0Val" class="val-highlight">7.80 mm</span>
-        </div>
-        <input type="range" id="r0Slider" min="7.0" max="8.5" step="0.05" value="7.80">
+        <div class="label-row"><span>目標降度 (Target Rx):</span><span id="val-rx" class="val-highlight">-3.00 D</span></div>
+        <input type="range" id="input-rx" min="-10.00" max="-0.50" step="0.25" value="-3.00">
       </div>
       <div class="control-group">
         <div class="label-row">
-          <span>離心率 (e-value):</span>
-          <span id="eVal" class="val-highlight">0.50</span>
+          <span class="aspheric-label">└ Jessen Factor:</span><span id="val-jessen" class="val-highlight">0.75 D</span>
         </div>
-        <input type="range" id="eSlider" min="0.0" max="0.90" step="0.01" value="0.50">
+        <input type="range" id="input-jessen" min="0.50" max="2.00" step="0.25" value="0.75">
       </div>
+
+      <div class="control-group" style="margin-top: 8px;">
+        <div class="label-row"><span>中央曲率 (R₀):</span><span id="val-r0" class="val-highlight">7.80 mm</span></div>
+        <input type="range" id="input-r0" min="7.0" max="8.5" step="0.01" value="7.80">
+      </div>
+      <div class="control-group">
+        <div class="label-row"><span>離心率 (e-value):</span><span id="val-e" class="val-highlight">0.50</span></div>
+        <input type="range" id="input-e" min="0.0" max="0.90" step="0.01" value="0.50">
+      </div>
+      <button class="btn-auto" id="btn-autofit">🚀 重置並執行自動驗配</button>
     </div>
+
+    <!-- 鏡片幾何參數區塊 -->
     <div class="panel">
-      <div class="panel-title">2. 目標與自動運算 (Auto-Fit)</div>
-      <div class="control-group">
-        <div class="label-row">
-          <span>目標降度 (Target Rx):</span>
-          <span><input type="number" id="rxInput" value="3.00" step="0.25" min="1.00" max="8.00"> D</span>
-        </div>
-      </div>
-      <div class="control-group">
-        <div class="label-row">
-          <span>鏡片總直徑 (OAD):</span>
-          <span id="oadVal" class="val-highlight">10.6 mm</span>
-        </div>
-        <input type="range" id="oadSlider" min="10.0" max="11.2" step="0.1" value="10.6">
-      </div>
-      <button class="btn-auto" onclick="runAutoFit()">🚀 執行標準自動驗配</button>
-    </div>
-    <div class="panel">
-      <div class="panel-title">3. 鏡片幾何微調 (Manual Override)</div>
+      <div class="panel-title">2. 鏡片非球面與幾何曲率 (Aspheric & Radii)</div>
+      
       <div class="control-group">
         <div class="label-row">
           <span>基弧 (BC Radius):</span>
-          <span id="bcVal" class="val-highlight" style="color: var(--accent);">-- mm</span>
+          <span id="val-bc" class="val-highlight" style="color: var(--lens);">8.50 mm</span>
         </div>
-        <input type="range" id="bcSlider" min="7.0" max="10.0" step="0.01" value="8.50">
+        <input type="range" id="input-bc" min="7.0" max="10.0" step="0.01" value="8.50">
       </div>
-      <div class="control-group">
+
+      <div class="control-group" style="margin-top: 8px;">
         <div class="label-row">
           <span>反轉弧 (RC Radius):</span>
-          <span id="rcVal" class="val-highlight" style="color: var(--accent);">-- mm</span>
+          <span id="val-rc" class="val-highlight" style="color: var(--lens);">6.50 mm</span>
         </div>
-        <input type="range" id="rcSlider" min="5.0" max="15.0" step="0.05" value="6.50">
+        <input type="range" id="input-rc" min="4.0" max="15.0" step="0.01" value="6.50">
+      </div>
+
+      <div class="control-group" style="margin-top: 8px;">
+        <div class="label-row">
+          <span>定位弧 (AC Radius):</span>
+          <span id="val-ac" class="val-highlight" style="color: var(--lens);">8.00 mm</span>
+        </div>
+        <input type="range" id="input-ac" min="7.0" max="12.0" step="0.01" value="8.00">
       </div>
       <div class="control-group">
         <div class="label-row">
-          <span>定位弧 (AC Radius):</span>
-          <span id="acVal" class="val-highlight" style="color: var(--accent);">-- mm</span>
+          <span class="aspheric-label">└ AC 離心率 (e-value):</span><span id="val-ac_e" class="val-highlight">0.50</span>
         </div>
-        <input type="range" id="acSlider" min="7.0" max="12.0" step="0.05" value="8.00">
+        <input type="range" id="input-ac_e" min="0.0" max="0.90" step="0.01" value="0.50">
+      </div>
+
+      <div class="control-group" style="margin-top: 8px;">
+        <div class="label-row">
+          <span>邊弧 (PC Radius):</span>
+          <span id="val-pc" class="val-highlight" style="color: var(--lens);">11.00 mm</span>
+        </div>
+        <input type="range" id="input-pc" min="9.0" max="15.0" step="0.05" value="11.00">
       </div>
     </div>
-    
+
+    <!-- 區域寬度區塊 -->
+    <div class="panel">
+      <div class="panel-title">3. 鏡片區域寬度 (Zone Diameters)</div>
+      <div class="control-group">
+        <div class="label-row"><span>光學區直徑 (OZD):</span><span id="val-ozd" class="val-highlight">6.0 mm</span></div>
+        <input type="range" id="input-ozd" min="5.0" max="7.0" step="0.1" value="6.0">
+      </div>
+      <div class="control-group">
+        <div class="label-row"><span>反轉區寬度 (RZW):</span><span id="val-rzw" class="val-highlight">0.6 mm</span></div>
+        <input type="range" id="input-rzw" min="0.3" max="1.2" step="0.05" value="0.6">
+      </div>
+      <div class="control-group">
+        <div class="label-row"><span>定位區寬度 (AZW):</span><span id="val-azw" class="val-highlight">1.0 mm</span></div>
+        <input type="range" id="input-azw" min="0.5" max="1.5" step="0.05" value="1.0">
+      </div>
+      <div class="control-group">
+        <div class="label-row"><span>總直徑 (OAD):</span><span id="val-oad" class="val-highlight">10.6 mm</span></div>
+        <input type="range" id="input-oad" min="10.0" max="11.6" step="0.1" value="10.6">
+        <div class="zone-info" id="info-pcw">邊弧區寬度 (PCW): 0.70 mm</div>
+      </div>
+    </div>
+
     <div style="height: 30px; flex-shrink: 0;"></div>
   </div>
 </div>
+
 <script>
-  /* ============================================================
-     1. 數學與幾何演算法核心
-     ============================================================ */
-  function calculateCorneaSag(r0, e, y) {
-    if (Math.abs(e) < 1e-5) return r0 - Math.sqrt(Math.max(0, r0 * r0 - y * y));
+/**
+ * Ortho-k 驗配輔助器 V2.1
+ * 移除 BC e-value，並支援全區曲率 mm/D 雙重顯示
+ */
+
+const Config = {
+  K_INDEX: 337.5,
+  TARGET_APICAL_CLEARANCE: 0.010, // mm (10µm)
+  TARGET_AC_END_CLEARANCE: 0.002, // mm (2µm)
+  RC_MIN: 4.0,
+  RC_MAX: 19.9
+};
+
+const rawState = {
+  rx: -3.00, jessen: 0.75, r0: 7.80, e: 0.50, oad: 10.6,
+  ozd: 6.0, rzw: 0.6, azw: 1.0,
+  bc: 8.50, // 移除 bc_e
+  rc: 6.50, 
+  ac: 8.00, ac_e: 0.50,
+  pc: 11.00,
+  showCornea: true, showLens: true, showTearFilm: true,
+  currentDropAmount: 0
+};
+
+let isAutoFitting = false;
+let renderPending = false;
+
+const State = new Proxy(rawState, {
+  set(target, prop, value) {
+    target[prop] = value;
+    if (!isAutoFitting && (prop === 'rx' || prop === 'jessen' || prop === 'r0' || prop === 'e')) {
+      Controller.runAutoFit();
+    } else if (!isAutoFitting) {
+      Controller.scheduleUpdate();
+    }
+    return true;
+  }
+});
+
+const MathUtils = {
+  corneaSag: (r, e, y) => {
+    if (Math.abs(e) < 1e-5) return r - Math.sqrt(Math.max(0, r * r - y * y));
     const factor = 1 - e * e;
-    const underRoot = r0 * r0 - factor * y * y;
+    const underRoot = r * r - factor * y * y;
     if (underRoot < 0) return null;
-    return (r0 - Math.sqrt(underRoot)) / factor;
-  }
-  function getArcSagDelta(r, y_start, y_end) {
-    if (r <= Math.abs(y_end)) return null; 
-    const sag_start = r - Math.sqrt(r * r - y_start * y_start);
-    const sag_end = r - Math.sqrt(r * r - y_end * y_end);
-    return sag_end - sag_start;
-  }
-  function calculateLensShapeSag(rBC, rRC, rAC, oad, y_abs) {
-    let sag = 0;
-    const y = Math.abs(y_abs);
-    const y_bc = 3.0;       
-    const y_rc = 3.5;       
-    const y_oad = oad / 2;  
-    if (y <= y_bc) {
-      let delta = getArcSagDelta(rBC, 0, y);
-      if (delta === null) return null;
-      sag += delta;
-    } else if (y <= y_rc) {
-      let d1 = getArcSagDelta(rBC, 0, y_bc);
-      let d2 = getArcSagDelta(rRC, y_bc, y);
-      if (d1 === null || d2 === null) return null;
-      sag += d1 + d2;
-    } else if (y <= y_oad) {
-      let d1 = getArcSagDelta(rBC, 0, y_bc);
-      let d2 = getArcSagDelta(rRC, y_bc, y_rc);
-      let d3 = getArcSagDelta(rAC, y_rc, y);
-      if (d1 === null || d2 === null || d3 === null) return null;
-      sag += d1 + d2 + d3;
+    return (r - Math.sqrt(underRoot)) / factor;
+  },
+
+  arcSagDelta: (r, e, y_start, y_end) => {
+    const ys2 = y_start * y_start;
+    const ye2 = y_end * y_end;
+    if (Math.abs(e) < 1e-5) {
+      if (r * r < ye2) return null;
+      return Math.sqrt(r * r - ys2) - Math.sqrt(r * r - ye2);
     } else {
-      return null; 
+      const factor = 1 - e * e;
+      if (r * r < factor * ye2) return null;
+      return (Math.sqrt(r * r - factor * ys2) - Math.sqrt(r * r - factor * ye2)) / factor;
     }
-    return sag;
-  }
-  /* ============================================================
-     2. DOM 與 Chart.js 初始設定
-     ============================================================ */
-  const r0Slider = document.getElementById('r0Slider');
-  const eSlider = document.getElementById('eSlider');
-  const oadSlider = document.getElementById('oadSlider');
-  const bcSlider = document.getElementById('bcSlider');
-  const rcSlider = document.getElementById('rcSlider');
-  const acSlider = document.getElementById('acSlider');
-  const rxInput = document.getElementById('rxInput');
-  
-  const showCorneaCheckbox = document.getElementById('showCornea');
-  const showLensCheckbox = document.getElementById('showLens');
-  
-  const ctx = document.getElementById('simChart').getContext('2d');
-  
-  const chart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      datasets: [
-        {
-          label: '角膜 (Cornea)',
-          data: [],
-          borderColor: '#ffffff',
-          borderWidth: 2.5,
-          pointRadius: 0,
-          tension: 0.1,
-          zIndex: 2,
-          hidden: false
-        },
-        {
-          label: '鏡片 (Lens)',
-          data: [],
-          borderColor: '#38bdf8',
-          borderWidth: 2.5,
-          pointRadius: 0,
-          tension: 0.1,
-          fill: '-1', 
-          backgroundColor: 'rgba(56, 189, 248, 0.25)', 
-          zIndex: 1,
-          hidden: false
-        }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: false,
-      layout: { padding: { top: 10, bottom: 5, left: 0, right: 0 } },
-      scales: {
-        x: {
-          type: 'linear', min: -6.0, max: 6.0,
-          grid: { color: '#1e293b' },
-          ticks: { color: '#94a3b8', font: { size: 9 }, stepSize: 1 }
-        },
-        y: {
-          grid: { color: '#1e293b' },
-          ticks: { color: '#94a3b8', font: { size: 9 }, callback: (v) => v.toFixed(1) },
-          reverse: true 
-        }
-      },
-      plugins: { legend: { display: false }, tooltip: { enabled: false } }
+  },
+
+  lensSag: (state, y_abs) => {
+    const y = Math.abs(y_abs);
+    let sag = 0;
+    const y_bc = state.ozd / 2;
+    const y_rc = y_bc + state.rzw;
+    const y_ac = y_rc + state.azw;
+    const y_pc = state.oad / 2;
+
+    // BC (e值固定為0，純球面)
+    if (y <= y_bc) {
+      const d = MathUtils.arcSagDelta(state.bc, 0, 0, y);
+      return d !== null ? sag + d : null;
     }
-  });
-  /* ============================================================
-     3. 核心更新邏輯 (Y軸絕對置中鎖定版)
-     ============================================================ */
-  function update() {
-    const r0 = parseFloat(r0Slider.value);
-    const e = parseFloat(eSlider.value);
-    const oad = parseFloat(oadSlider.value);
-    const rBC = parseFloat(bcSlider.value);
-    const rRC = parseFloat(rcSlider.value);
-    const rAC = parseFloat(acSlider.value);
-    document.getElementById('r0Val').innerText = `${r0.toFixed(2)} mm`;
-    document.getElementById('eVal').innerText = e.toFixed(2);
-    document.getElementById('oadVal').innerText = `${oad.toFixed(1)} mm`;
-    document.getElementById('bcVal').innerText = `${rBC.toFixed(2)} mm`;
-    document.getElementById('rcVal').innerText = `${rRC.toFixed(2)} mm`;
-    document.getElementById('acVal').innerText = `${rAC.toFixed(2)} mm`;
-    let minDiff = 999;
-    for (let y = 0.0; y <= oad / 2; y += 0.05) {
-      let cs = calculateCorneaSag(r0, e, y);
-      let ls = calculateLensShapeSag(rBC, rRC, rAC, oad, y);
+    sag += MathUtils.arcSagDelta(state.bc, 0, 0, y_bc) || 0;
+
+    // RC (純球面)
+    if (y <= y_rc) {
+      const d = MathUtils.arcSagDelta(state.rc, 0, y_bc, y);
+      return d !== null ? sag + d : null;
+    }
+    sag += MathUtils.arcSagDelta(state.rc, 0, y_bc, y_rc) || 0;
+
+    // AC
+    if (y <= y_ac) {
+      const d = MathUtils.arcSagDelta(state.ac, state.ac_e, y_rc, y);
+      return d !== null ? sag + d : null;
+    }
+    sag += MathUtils.arcSagDelta(state.ac, state.ac_e, y_rc, y_ac) || 0;
+
+    // PC (純球面)
+    if (y <= y_pc) {
+      const d = MathUtils.arcSagDelta(state.pc, 0, y_ac, y);
+      return d !== null ? sag + d : null;
+    }
+    return null;
+  },
+
+  calculateLensDrop: (state) => {
+    let minDiff = Infinity;
+    for (let y = 0.0; y <= state.oad / 2; y += 0.02) {
+      const cs = MathUtils.corneaSag(state.r0, state.e, y);
+      const ls = MathUtils.lensSag(state, y);
       if (cs !== null && ls !== null) {
-        let diff = cs - ls;
-        if (diff < minDiff) {
-          minDiff = diff;
-        }
+        if (cs - ls < minDiff) minDiff = cs - ls;
       }
     }
-    let dropAmount = minDiff; 
-    const pointsCornea = [];
-    const pointsLens = [];
-    for (let y = -5.5; y <= 5.501; y += 0.1) {
-      let cs = calculateCorneaSag(r0, e, y);
-      if (cs !== null) {
-        pointsCornea.push({ x: y, y: cs });
+    return minDiff;
+  }
+};
+
+const Controller = {
+  scheduleUpdate: () => {
+    if (!renderPending) {
+      renderPending = true;
+      requestAnimationFrame(() => {
+        Controller.syncDOMFromState();
+        State.currentDropAmount = MathUtils.calculateLensDrop(State);
+        Controller.updateMetrics();
+        Renderer.draw();
+        renderPending = false;
+      });
+    }
+  },
+
+  syncDOMFromState: () => {
+    Object.keys(rawState).forEach(key => {
+      const inputEl = document.getElementById(`input-${key}`);
+      const valEl = document.getElementById(`val-${key}`);
+      if (inputEl) {
+        if (inputEl.type === 'checkbox') inputEl.checked = State[key];
+        else inputEl.value = State[key];
       }
+      if (valEl) {
+        let displayVal = typeof State[key] === 'number' ? State[key].toFixed(2) : State[key];
+        
+        // 針對不同參數附加單位與 K 值
+        if (key === 'rx' || key === 'jessen') {
+          displayVal += ' D';
+        } else if (['r0', 'bc', 'rc', 'ac', 'pc'].includes(key)) {
+          // 將半徑 mm 轉換為曲率 K (D)
+          const kVal = (Config.K_INDEX / State[key]).toFixed(2);
+          displayVal = `${displayVal} mm (${kVal} D)`;
+        } else if (['ozd', 'rzw', 'azw', 'oad'].includes(key)) {
+          displayVal += ' mm';
+        }
+        
+        valEl.innerText = displayVal;
+      }
+    });
+
+    const pcw = (State.oad / 2) - ((State.ozd / 2) + State.rzw + State.azw);
+    document.getElementById('info-pcw').innerText = `邊弧區寬度 (PCW): ${pcw > 0 ? pcw.toFixed(2) : '無效區間'} mm`;
+  },
+
+  updateMetrics: () => {
+    const y_bc = State.ozd / 2;
+    const y_rc = y_bc + State.rzw;
+    const y_ac = y_rc + State.azw;
+    const y_pc = State.oad / 2;
+    
+    const getClearance = (y) => {
+      const cs = MathUtils.corneaSag(State.r0, State.e, y);
+      const ls = MathUtils.lensSag(State, y);
+      if (cs === null || ls === null) return null;
+      return cs - (ls + State.currentDropAmount);
+    };
+
+    const apicalClearance = getClearance(0);
+    
+    let maxReservoir = 0;
+    for (let y = y_bc; y <= y_rc; y += 0.05) {
+      const cl = getClearance(y);
+      if (cl !== null && cl > maxReservoir) maxReservoir = cl;
+    }
+
+    let acSum = 0, acCount = 0;
+    for (let y = y_rc; y <= y_ac; y += 0.05) {
+      const cl = getClearance(y);
+      if (cl !== null) { acSum += cl; acCount++; }
+    }
+    const acAvg = acCount > 0 ? acSum / acCount : 0;
+
+    const edgeClearance = getClearance(y_pc);
+    const totalSag = MathUtils.lensSag(State, y_pc);
+
+    document.getElementById('metric-apical').innerText = apicalClearance !== null ? `${(apicalClearance * 1000).toFixed(0)} µm` : '--';
+    document.getElementById('metric-reservoir').innerText = `${(maxReservoir * 1000).toFixed(0)} µm`;
+    document.getElementById('metric-ac-clearance').innerText = `${(acAvg * 1000).toFixed(0)} µm`;
+    document.getElementById('metric-edge-clearance').innerText = edgeClearance !== null ? `${(edgeClearance * 1000).toFixed(0)} µm` : '--';
+    document.getElementById('metric-lens-sag').innerText = totalSag !== null ? `${totalSag.toFixed(3)} mm` : '--';
+  },
+
+  runAutoFit: () => {
+    isAutoFitting = true;
+    const dK = Config.K_INDEX / State.r0;
+    
+    const targetDiopter = dK - (Math.abs(State.rx) + State.jessen);
+    State.bc = Config.K_INDEX / targetDiopter;
+    
+    State.ac = State.r0 + (State.e * 0.6) + 0.15; 
+    State.ac_e = State.e; 
+
+    const y_bc = State.ozd / 2;
+    const y_rc = y_bc + State.rzw;
+    const y_ac = y_rc + State.azw;
+    
+    const corneaSagAtAcEnd = MathUtils.corneaSag(State.r0, State.e, y_ac);
+    if(corneaSagAtAcEnd !== null) {
+      const targetLensSagAtAcEnd = corneaSagAtAcEnd - Config.TARGET_APICAL_CLEARANCE + Config.TARGET_AC_END_CLEARANCE;
+      // BC e值固定為0
+      const bcSag = MathUtils.arcSagDelta(State.bc, 0, 0, y_bc);
+      const acSag = MathUtils.arcSagDelta(State.ac, State.ac_e, y_rc, y_ac);
       
-      if (Math.abs(y) <= oad / 2 + 0.01) {
-        let ls = calculateLensShapeSag(rBC, rRC, rAC, oad, y);
-        if (ls !== null) {
-          pointsLens.push({ x: y, y: ls + dropAmount });
+      const targetRcSag = targetLensSagAtAcEnd - bcSag - acSag;
+
+      let rc_low = Config.RC_MIN;
+      let rc_high = Config.RC_MAX;
+      let temp_rc = (rc_low + rc_high) / 2;
+
+      for (let i = 0; i < 40; i++) {
+        temp_rc = (rc_low + rc_high) / 2;
+        let currentRcSag = MathUtils.arcSagDelta(temp_rc, 0, y_bc, y_rc);
+        if (currentRcSag === null || currentRcSag > targetRcSag) rc_low = temp_rc; 
+        else rc_high = temp_rc;
+      }
+      State.rc = temp_rc;
+
+      const warningEl = document.getElementById('warning-msg');
+      if (temp_rc <= Config.RC_MIN + 0.1 || temp_rc >= Config.RC_MAX - 0.1) {
+        warningEl.style.display = 'block';
+      } else {
+        warningEl.style.display = 'none';
+      }
+    }
+
+    State.pc = State.ac + 3.0;
+    isAutoFitting = false;
+    Controller.scheduleUpdate();
+  },
+
+  init: () => {
+    document.querySelectorAll('input[type="range"], input[type="checkbox"]').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const key = e.target.id.replace('input-', '');
+        if (e.target.type === 'checkbox') {
+          State[key] = e.target.checked;
+        } else if (key === 'showCornea' || key === 'showLens' || key === 'showTearFilm') {
+            State[key] = e.target.checked;
         } else {
-          pointsLens.push({ x: y, y: null });
+          State[key] = parseFloat(e.target.value);
         }
-      } else {
-        pointsLens.push({ x: y, y: null });
+      });
+    });
+
+    ['showCornea', 'showLens', 'showTearFilm'].forEach(key => {
+        document.getElementById(key).addEventListener('change', (e) => {
+            State[key] = e.target.checked;
+        })
+    });
+
+    document.getElementById('btn-autofit').addEventListener('click', Controller.runAutoFit);
+    window.addEventListener('resize', () => { Renderer.init(); Controller.scheduleUpdate(); });
+
+    Renderer.init();
+    Controller.runAutoFit(); 
+  }
+};
+
+const Renderer = {
+  canvas: document.getElementById('simCanvas'),
+  ctx: document.getElementById('simCanvas').getContext('2d'),
+  
+  init: () => {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = Renderer.canvas.parentElement.getBoundingClientRect();
+    Renderer.canvas.width = rect.width * dpr;
+    Renderer.canvas.height = rect.height * dpr;
+    Renderer.ctx.scale(dpr, dpr);
+    Renderer.canvas.style.width = `${rect.width}px`;
+  },
+
+  getFluoresceinColor: (clearance_mm) => {
+    const um = clearance_mm * 1000;
+    if (um <= 3) return `rgba(10, 15, 25, 0.9)`;
+    if (um <= 20) { 
+      const r = (um - 3) / 17;
+      return `rgba(${10 + r*120}, ${30 + r*210}, ${15 + r*20}, ${0.5 + r*0.4})`;
+    }
+    if (um <= 80) { 
+      const r = (um - 20) / 60;
+      return `rgba(${130 - r*110}, ${240 - r*90}, ${35 + r*15}, ${0.9 - r*0.3})`;
+    }
+    return `rgba(20, 150, 50, 0.55)`;
+  },
+
+  draw: () => {
+    const width = Renderer.canvas.clientWidth;
+    const height = Renderer.canvas.clientHeight;
+    const ctx = Renderer.ctx;
+
+    ctx.clearRect(0, 0, width, height);
+
+    const pxPerMm = Math.min(width / 13, height / 4.5); 
+    const originX = width / 2;
+    const originY = height * 0.15; 
+
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x <= width / 2; x += pxPerMm) {
+      ctx.moveTo(originX + x, 0); ctx.lineTo(originX + x, height);
+      ctx.moveTo(originX - x, 0); ctx.lineTo(originX - x, height);
+    }
+    for (let y = 0; y <= height; y += pxPerMm) {
+      ctx.moveTo(0, originY + y); ctx.lineTo(width, originY + y);
+      ctx.moveTo(0, originY - y); ctx.lineTo(width, originY - y);
+    }
+    ctx.stroke();
+
+    const corneaPoints = [];
+    const lensPoints = [];
+
+    for (let y = -6.0; y <= 6.0; y += 0.05) {
+      const cs = MathUtils.corneaSag(State.r0, State.e, y);
+      if (cs !== null) corneaPoints.push({ x: y, y: cs });
+
+      if (Math.abs(y) <= State.oad / 2) {
+        const ls = MathUtils.lensSag(State, y);
+        if (ls !== null) lensPoints.push({ x: y, y: ls + State.currentDropAmount });
       }
     }
-    chart.data.datasets[0].data = pointsCornea;
-    chart.data.datasets[1].data = pointsLens;
-    // =======================================================
-    // 全新框架鎖定邏輯：1:1 比例 且 垂直絕對置中
-    // =======================================================
-    chart.update(); 
-    if (chart.chartArea) {
-      const areaWidth = chart.chartArea.right - chart.chartArea.left;
-      const areaHeight = chart.chartArea.bottom - chart.chartArea.top;
-      
-      if (areaWidth > 0 && areaHeight > 0) {
-        const xSpan = 12.0; 
-        const requiredYSpan = xSpan * (areaHeight / areaWidth);
+
+    if (State.showTearFilm) {
+      const maxLensRadius = State.oad / 2;
+      ctx.lineWidth = 2; 
+      for (let px = -maxLensRadius * pxPerMm; px <= maxLensRadius * pxPerMm; px += 1) {
+        const mmX = px / pxPerMm;
+        const cSag = MathUtils.corneaSag(State.r0, State.e, mmX);
+        const lSagRaw = MathUtils.lensSag(State, mmX);
         
-        // 幾何絕對置中：角膜深度(0~2.5)的中心大約在 1.25mm
-        const fixedCenterY = 1.25;
-        
-        chart.options.scales.y.min = fixedCenterY - (requiredYSpan / 2);
-        chart.options.scales.y.max = fixedCenterY + (requiredYSpan / 2);
-        
-        chart.update(); 
+        if (cSag !== null && lSagRaw !== null) {
+          const lSag = lSagRaw + State.currentDropAmount;
+          const clearance = cSag - lSag;
+          if (clearance > 0) {
+            ctx.strokeStyle = Renderer.getFluoresceinColor(clearance);
+            ctx.beginPath();
+            ctx.moveTo(originX + px, originY + cSag * pxPerMm);
+            ctx.lineTo(originX + px, originY + lSag * pxPerMm);
+            ctx.stroke();
+          }
+        }
       }
+    }
+
+    if (State.showCornea && corneaPoints.length > 0) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(originX + corneaPoints[0].x * pxPerMm, originY + corneaPoints[0].y * pxPerMm);
+      corneaPoints.forEach(p => ctx.lineTo(originX + p.x * pxPerMm, originY + p.y * pxPerMm));
+      ctx.stroke();
+    }
+
+    if (State.showLens && lensPoints.length > 0) {
+      ctx.strokeStyle = '#f97316';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(originX + lensPoints[0].x * pxPerMm, originY + lensPoints[0].y * pxPerMm);
+      lensPoints.forEach(p => ctx.lineTo(originX + p.x * pxPerMm, originY + p.y * pxPerMm));
+      ctx.stroke();
     }
   }
-  /* ============================================================
-     4. Scheme A: 自動配適演算法 (Auto-Fit)
-     ============================================================ */
-  function runAutoFit() {
-    const r0 = parseFloat(r0Slider.value);
-    const e = parseFloat(eSlider.value);
-    const oad = parseFloat(oadSlider.value);
-    const targetRx = parseFloat(rxInput.value);
-    const jessen = 0.75; 
-    const dK = 337.5 / r0;
-    const targetDiopter = dK - (targetRx + jessen);
-    const rBC = 337.5 / targetDiopter;
-    const rAC = r0 + (e * 0.6) + 0.15; 
-    let rc_low = 5.0;
-    let rc_high = 15.0;
-    let best_rc = 6.5;
-    for (let i = 0; i < 30; i++) {
-      let rc_mid = (rc_low + rc_high) / 2;
-      
-      let minDiff = 999;
-      for (let y = 0.0; y <= oad / 2; y += 0.1) {
-        let cs = calculateCorneaSag(r0, e, y);
-        let ls = calculateLensShapeSag(rBC, rc_mid, rAC, oad, y);
-        if (cs !== null && ls !== null) {
-          if (cs - ls < minDiff) minDiff = cs - ls;
-        }
-      }
-      
-      let apical_clearance = -minDiff;
-      if (apical_clearance > 0.010) {
-        rc_low = rc_mid;
-      } else {
-        rc_high = rc_mid;
-      }
-      best_rc = rc_mid;
-    }
-    bcSlider.value = rBC.toFixed(2);
-    rcSlider.value = best_rc.toFixed(2);
-    acSlider.value = rAC.toFixed(2);
-    update();
-  }
-  /* ============================================================
-     5. 事件監聽與初始化
-     ============================================================ */
-  [r0Slider, eSlider, oadSlider, bcSlider, rcSlider, acSlider].forEach(slider => {
-    slider.addEventListener('input', update);
-  });
-  rxInput.addEventListener('change', runAutoFit);
+};
 
-  // 新增：圖表顯示切換事件監聽
-  showCorneaCheckbox.addEventListener('change', (e) => {
-    chart.data.datasets[0].hidden = !e.target.checked;
-    chart.update();
-  });
-  showLensCheckbox.addEventListener('change', (e) => {
-    chart.data.datasets[1].hidden = !e.target.checked;
-    chart.update();
-  });
-
-  let resizeTimer;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(update, 100);
-  });
-  runAutoFit();
+Controller.init();
 </script>
 </body>
 </html>
