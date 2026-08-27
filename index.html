@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Ortho-k驗配輔助器 V2.2</title>
+  <title>Ortho-k驗配輔助器 V2.5</title>
   <style>
     :root {
       --bg-color: #0b0f19;
@@ -198,7 +198,7 @@
   
   <div class="fixed-top-section">
     <header>
-      <h1>Ortho-k驗配輔助器 V2.2</h1>
+      <h1>Ortho-k驗配輔助器 V2.5</h1>
       <div class="info-banner">💡 提示：為防滑動誤觸，拉桿需「長按 0.3 秒」方可解鎖拖拉。</div>
       <div id="warning-msg" class="warning-banner">⚠️ 警告：目標降度可能超出鏡片幾何極限，請留意合理性。</div>
     </header>
@@ -233,7 +233,7 @@
       <div class="visibility-controls">
         <label class="toggle-label"><input type="checkbox" id="showCornea" checked> <span style="color: var(--cornea);">角膜</span></label>
         <label class="toggle-label"><input type="checkbox" id="showLens" checked> <span style="color: var(--lens);">鏡片</span></label>
-        <label class="toggle-label"><input type="checkbox" id="showTearFilm" checked> <span style="color: #84cc16;">螢光層</span></label>
+        <label class="toggle-label"><input type="checkbox" id="showTearFilm" checked> <span style="color: rgba(57, 255, 20, 1);">螢光層</span></label>
       </div>
     </div>
   </div>
@@ -343,11 +343,11 @@
 
 <script>
 /**
- * Ortho-k 驗配輔助器 V2.2
- * 特色：
- * 1. 長按 0.3 秒防誤觸 Slider 機制
- * 2. PCW 固定 0.5mm，ACW 動態計算不提供拉桿
- * 3. RZW 預設 0.50mm
+ * Ortho-k 驗配輔助器 V2.5
+ * 更新：
+ * 1. 導入 autoFit 節流 (Throttle) 機制，避免拖拉時過度消耗 CPU。
+ * 2. 二分搜尋法加入 Early Exit，誤差 < 0.1µm 提前結束。
+ * 3. 鏡片沉降掃描改採兩階段逼近法 (粗掃描 + 精細掃描)，大幅降低運算迴圈。
  */
 
 const Config = {
@@ -372,6 +372,7 @@ const rawState = {
 
 let isAutoFitting = false;
 let renderPending = false;
+let autoFitPending = false; // 用於 AutoFit 節流
 
 // 計算動態 ACW (不能低於0)
 const getACW = (state) => {
@@ -383,8 +384,8 @@ const State = new Proxy(rawState, {
   set(target, prop, value) {
     target[prop] = value;
     if (!isAutoFitting && (prop === 'rx' || prop === 'jessen' || prop === 'r0' || prop === 'e' || prop === 'oad' || prop === 'ozd' || prop === 'rzw')) {
-      // 只要改變基本參數或寬度，都自動重新執行 AutoFit 匹配
-      Controller.runAutoFit();
+      // 透過 requestAnimationFrame 節流 AutoFit 觸發頻率
+      Controller.scheduleAutoFit();
     } else if (!isAutoFitting) {
       Controller.scheduleUpdate();
     }
@@ -448,12 +449,30 @@ const MathUtils = {
   },
 
   calculateLensDrop: (state) => {
+    const maxRadius = state.oad / 2;
     let minDiff = Infinity;
-    for (let y = 0.0; y <= state.oad / 2; y += 0.02) {
+    let bestY = 0;
+    
+    // 第一階段：粗略掃描 (步距 0.1 mm)
+    for (let y = 0.0; y <= maxRadius; y += 0.1) {
       const cs = MathUtils.corneaSag(state.r0, state.e, y);
       const ls = MathUtils.lensSag(state, y);
       if (cs !== null && ls !== null) {
-        if (cs - ls < minDiff) minDiff = cs - ls;
+        const diff = cs - ls;
+        if (diff < minDiff) { minDiff = diff; bestY = y; }
+      }
+    }
+    
+    // 第二階段：精細掃描 (步距 0.01 mm)，在概略最低點前後尋找
+    minDiff = Infinity;
+    const searchStart = Math.max(0.0, bestY - 0.1);
+    const searchEnd = Math.min(maxRadius, bestY + 0.1);
+    for (let y = searchStart; y <= searchEnd; y += 0.01) {
+      const cs = MathUtils.corneaSag(state.r0, state.e, y);
+      const ls = MathUtils.lensSag(state, y);
+      if (cs !== null && ls !== null) {
+        const diff = cs - ls;
+        if (diff < minDiff) minDiff = diff;
       }
     }
     return minDiff;
@@ -470,6 +489,16 @@ const Controller = {
         Controller.updateMetrics();
         Renderer.draw();
         renderPending = false;
+      });
+    }
+  },
+
+  scheduleAutoFit: () => {
+    if (!autoFitPending) {
+      autoFitPending = true;
+      requestAnimationFrame(() => {
+        Controller.runAutoFit();
+        autoFitPending = false;
       });
     }
   },
@@ -575,6 +604,12 @@ const Controller = {
       for (let i = 0; i < 40; i++) {
         temp_rc = (rc_low + rc_high) / 2;
         let currentRcSag = MathUtils.arcSagDelta(temp_rc, 0, y_bc, y_rc);
+        
+        // 提早結束機制：當精度達到 0.0001 mm (0.1 µm) 時停止運算
+        if (currentRcSag !== null && Math.abs(currentRcSag - targetRcSag) < 0.0001) {
+          break;
+        }
+
         if (currentRcSag === null || currentRcSag > targetRcSag) rc_low = temp_rc; 
         else rc_high = temp_rc;
       }
@@ -609,11 +644,12 @@ const Controller = {
       let pressTimer;
       let isUnlocked = false;
       let startX, startY;
+      let cachedRect = null; // 用於快取寬度與位置
 
-      // 核心數值更新邏輯 (計算觸控點與軌道寬度的比例)
+      // 核心數值更新邏輯
       const updateValueFromEvent = (clientX) => {
-        const rect = input.getBoundingClientRect();
-        let pct = (clientX - rect.left) / rect.width;
+        if (!cachedRect) cachedRect = input.getBoundingClientRect();
+        let pct = (clientX - cachedRect.left) / cachedRect.width;
         pct = Math.max(0, Math.min(1, pct));
         
         const min = parseFloat(input.min);
@@ -635,6 +671,7 @@ const Controller = {
         startX = point.clientX;
         startY = point.clientY;
         isUnlocked = false;
+        cachedRect = input.getBoundingClientRect(); // 互動開始時快取
         
         wrapper.classList.add('pressing');
         
@@ -643,7 +680,6 @@ const Controller = {
           isUnlocked = true;
           wrapper.classList.remove('pressing');
           wrapper.classList.add('unlocked');
-          // 支援手機震動回饋
           if (navigator.vibrate) navigator.vibrate(30); 
           updateValueFromEvent(point.clientX);
         }, 300);
@@ -652,13 +688,11 @@ const Controller = {
       const moveInteraction = (e) => {
         if (!isUnlocked) {
           const point = e.touches ? e.touches[0] : e;
-          // 如果手指滑動超過 10px，判定為網頁捲動，取消解鎖
           if (Math.abs(point.clientY - startY) > 10 || Math.abs(point.clientX - startX) > 10) {
             clearTimeout(pressTimer);
             wrapper.classList.remove('pressing');
           }
         } else {
-          // 解鎖後，阻止畫面捲動，開始拖拉
           e.preventDefault(); 
           const point = e.touches ? e.touches[0] : e;
           updateValueFromEvent(point.clientX);
@@ -668,6 +702,7 @@ const Controller = {
       const endInteraction = () => {
         clearTimeout(pressTimer);
         isUnlocked = false;
+        cachedRect = null; // 互動結束清除快取
         wrapper.classList.remove('pressing', 'unlocked');
       };
 
@@ -705,12 +740,11 @@ const Controller = {
         })
     });
 
-    // 初始化防誤觸滑桿與綁定 AutoFit 按鈕
     Controller.setupSecureSliders();
     document.getElementById('btn-autofit').addEventListener('click', Controller.runAutoFit);
     window.addEventListener('resize', () => { Renderer.init(); Controller.scheduleUpdate(); });
 
-    isAutoFitting = true; // 暫停自動更新，進行首次渲染
+    isAutoFitting = true; 
     Renderer.init();
     Controller.runAutoFit(); 
   }
@@ -729,20 +763,6 @@ const Renderer = {
     Renderer.canvas.style.width = `${rect.width}px`;
   },
 
-  getFluoresceinColor: (clearance_mm) => {
-    const um = clearance_mm * 1000;
-    if (um <= 3) return `rgba(10, 15, 25, 0.9)`;
-    if (um <= 20) { 
-      const r = (um - 3) / 17;
-      return `rgba(${10 + r*120}, ${30 + r*210}, ${15 + r*20}, ${0.5 + r*0.4})`;
-    }
-    if (um <= 80) { 
-      const r = (um - 20) / 60;
-      return `rgba(${130 - r*110}, ${240 - r*90}, ${35 + r*15}, ${0.9 - r*0.3})`;
-    }
-    return `rgba(20, 150, 50, 0.55)`;
-  },
-
   draw: () => {
     const width = Renderer.canvas.clientWidth;
     const height = Renderer.canvas.clientHeight;
@@ -754,6 +774,10 @@ const Renderer = {
     const originX = width / 2;
     const originY = height * 0.15; 
 
+    // ★ 視覺偏移量設定 (解決線條粗細造成的重疊錯覺)
+    const visualOffsetPx = 3;
+
+    // 繪製背景格線
     ctx.strokeStyle = '#1e293b';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -770,6 +794,7 @@ const Renderer = {
     const corneaPoints = [];
     const lensPoints = [];
 
+    // 計算精確數值點位
     for (let y = -6.0; y <= 6.0; y += 0.05) {
       const cs = MathUtils.corneaSag(State.r0, State.e, y);
       if (cs !== null) corneaPoints.push({ x: y, y: cs });
@@ -780,28 +805,36 @@ const Renderer = {
       }
     }
 
+    // 螢光層渲染
     if (State.showTearFilm) {
-      const maxLensRadius = State.oad / 2;
-      ctx.lineWidth = 2; 
-      for (let px = -maxLensRadius * pxPerMm; px <= maxLensRadius * pxPerMm; px += 1) {
-        const mmX = px / pxPerMm;
-        const cSag = MathUtils.corneaSag(State.r0, State.e, mmX);
-        const lSagRaw = MathUtils.lensSag(State, mmX);
-        
-        if (cSag !== null && lSagRaw !== null) {
-          const lSag = lSagRaw + State.currentDropAmount;
-          const clearance = cSag - lSag;
-          if (clearance > 0) {
-            ctx.strokeStyle = Renderer.getFluoresceinColor(clearance);
-            ctx.beginPath();
-            ctx.moveTo(originX + px, originY + cSag * pxPerMm);
-            ctx.lineTo(originX + px, originY + lSag * pxPerMm);
-            ctx.stroke();
-          }
+      ctx.fillStyle = 'rgba(57, 255, 20, 0.7)'; 
+      ctx.beginPath();
+
+      const halfOAD = State.oad / 2;
+      const step = 0.05; 
+
+      // 1. 從左到右繪製角膜前表面
+      for (let y = -halfOAD; y <= halfOAD + 0.01; y += step) {
+        const cSag = MathUtils.corneaSag(State.r0, State.e, y);
+        if (cSag !== null) {
+          ctx.lineTo(originX + y * pxPerMm, originY + cSag * pxPerMm);
         }
       }
+
+      // 2. 從右到左繪製鏡片後表面 (配合鏡片的視覺偏移量，一併往上提)
+      for (let y = halfOAD; y >= -halfOAD - 0.01; y -= step) {
+        const lSagRaw = MathUtils.lensSag(State, y);
+        if (lSagRaw !== null) {
+          const visualY = (lSagRaw + State.currentDropAmount) * pxPerMm - visualOffsetPx;
+          ctx.lineTo(originX + y * pxPerMm, originY + visualY);
+        }
+      }
+
+      ctx.closePath();
+      ctx.fill();
     }
 
+    // 繪製角膜白線 (維持真實座標)
     if (State.showCornea && corneaPoints.length > 0) {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2.5;
@@ -811,12 +844,14 @@ const Renderer = {
       ctx.stroke();
     }
 
+    // 繪製鏡片橘線 (加入視覺偏移往上提)
     if (State.showLens && lensPoints.length > 0) {
       ctx.strokeStyle = '#f97316';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(originX + lensPoints[0].x * pxPerMm, originY + lensPoints[0].y * pxPerMm);
-      lensPoints.forEach(p => ctx.lineTo(originX + p.x * pxPerMm, originY + p.y * pxPerMm));
+      // 在 Y 軸渲染時減去 visualOffsetPx
+      ctx.moveTo(originX + lensPoints[0].x * pxPerMm, originY + lensPoints[0].y * pxPerMm - visualOffsetPx);
+      lensPoints.forEach(p => ctx.lineTo(originX + p.x * pxPerMm, originY + p.y * pxPerMm - visualOffsetPx));
       ctx.stroke();
     }
   }
